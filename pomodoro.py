@@ -1,6 +1,5 @@
 from datetime import date, datetime
 import time #serve per gestire il tempo
-import simpleaudio as sa
 import os
 
 from storage import load_data, save_data, FILE_NAME
