@@ -1,0 +1,32 @@
+[
+    {
+        "subject": "Cinematografia Digitale",
+        "cfu": 12,
+        "grade": 27.0
+    },
+    {
+        "subject": "Programmazione in C",
+        "cfu": 10,
+        "grade": 28.0
+    },
+    {
+        "subject": "Programmazione in Java e Gestiuone della Grafica",
+        "cfu": 8,
+        "grade": 30.0
+    },
+    {
+        "subject": "Game Dev",
+        "cfu": 8,
+        "grade": 27.0
+    },
+    {
+        "subject": "Fisica 1",
+        "cfu": 6,
+        "grade": 22.0
+    },
+    {
+        "subject": "Analisi Numerica 1",
+        "cfu": 8,
+        "grade": 18.0
+    }
+]

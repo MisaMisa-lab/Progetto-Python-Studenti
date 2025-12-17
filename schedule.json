@@ -1,0 +1,20 @@
+{
+    "Lunedì": [],
+    "Martedì": [
+        {
+            "time": "14:00",
+            "subject": "TTCM",
+            "notes": "Obligatotio"
+        }
+    ],
+    "Mercoledì": [
+        {
+            "time": "09:00",
+            "subject": "TTCM",
+            "notes": "obbligatorio"
+        }
+    ],
+    "Giovedì": [],
+    "Venerdì": [],
+    "Sabato": []
+}
