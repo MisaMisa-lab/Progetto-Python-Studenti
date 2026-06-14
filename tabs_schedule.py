@@ -1,271 +1,245 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from schedule_storage import load_schedule, save_schedule
 
 
 class ScheduleTab(ttk.Frame):
-    DAYS = ("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato")
+    DAYS = ("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "DOMENICA")
 
-    def __init__(self, parent: tk.Widget): # Inizializza il Frame con padding e stile di sfondo personalizzato
-        super().__init__(parent, padding=16, style="Background.TFrame")
+    MONTHS = {
+        1: "Gennaio",
+        2: "Febbraio",
+        3: "Marzo",
+        4: "Aprile",
+        5: "Maggio",
+        6: "Giugno",
+        7: "Luglio",
+        8: "Agosto",
+        9: "Settembre",
+        10: "Ottobre",
+        11: "Novembre",
+        12: "Dicembre",
+    }
+
+    def __init__(self, parent: tk.Widget):
+        super().__init__(parent, padding=14, style="Background.TFrame")
+
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(3, weight=1)
+        self.rowconfigure(2, weight=1)
 
-        raw = load_schedule() # Carica il dizionario dal file JSON: {"Lunedì": [{time, subject, notes}, ...], ...}
-        self.schedule = {day: list(raw.get(day, [])) for day in self.DAYS} # Crea sempre le chiavi per i giorni attesi anche se mancanti nel file
+        data = load_schedule()
+        self.schedule = {day: list(data.get(day, [])) for day in self.DAYS}
 
-        today_index = datetime.now().weekday() # Trova l'indice del giorno corrente: datetime.weekday() restituisce 0=lunedì ... 6=domenica
-        if 0 <= today_index < len(self.DAYS): # esclude la domenica (indice 6) non presente in DAYS
-            self.current_day_index = today_index 
-        else:
-            self.current_day_index = 0 # fallback a Lunedì
+        today = datetime.now()
+        self.week_start = today - timedelta(days=today.weekday())
+        self.current_day = today.weekday() if today.weekday() < len(self.DAYS) else 0
 
-        self._build_ui()
-        self._refresh_day()
-        self._apply_tree_styles()
+        self.var_day = tk.StringVar()
+        self.var_date = tk.StringVar()
+        self.var_hint = tk.StringVar()
 
-        try: #tema
-            self.winfo_toplevel().bind("<<PlannerThemeChanged>>", self._on_theme_change, add="+")
+        self.build_ui()
+        self.refresh_day()
+        self.apply_tree_style()
+
+        try:
+            self.winfo_toplevel().bind("<<PlannerThemeChanged>>", self.on_theme_change, add="+")
         except Exception:
             pass
 
-    def _build_ui(self):
-        header = ttk.Frame(self, style="Surface.TFrame", padding=(16, 14))
-        header.grid(row=0, column=0, sticky="ew")
-        header.columnconfigure(0, weight=1)
+    def build_ui(self):
+        self.build_navigation()
+        self.build_form()
+        self.build_table()
 
-        ttk.Label(header, text="Orario settimanale", style="AppTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(
-            header,
-            text="Naviga tra i giorni, aggiungi impegni e mantieni tutto in ordine.",
-            style="SurfaceSubtle.TLabel",
-        ).grid(row=1, column=0, sticky="w", pady=(6, 0))
-
-        nav = ttk.Frame(self, padding=(0, 12)) #navigazione giorni
-        nav.grid(row=1, column=0, sticky="ew")
+    def build_navigation(self):
+        nav = ttk.Frame(self, style="Background.TFrame")
+        nav.grid(row=0, column=0, sticky="ew", pady=(0, 10))
         nav.columnconfigure(1, weight=1)
 
-        self.btn_prev = ttk.Button(nav, text="◀", width=3, command=self._show_previous_day) # Pulsante giorno precedente
+        self.btn_prev = ttk.Button(nav, text="‹", width=3, command=self.previous_day)
         self.btn_prev.grid(row=0, column=0, sticky="w")
 
-        self.lbl_day = ttk.Label(nav, text="", font=("Helvetica", 12, "bold")) # Etichetta con il giorno mostrato attualmente
-        self.lbl_day.grid(row=0, column=1, sticky="n")
+        center = ttk.Frame(nav, style="Background.TFrame")
+        center.grid(row=0, column=1)
 
-        self.btn_next = ttk.Button(nav, text="▶", width=3, command=self._show_next_day) # Pulsante giorno successivo
+        ttk.Label(center, textvariable=self.var_day, style="Subtle.TLabel", font=("Poppins", 15, "bold")).grid(row=0, column=0)
+        ttk.Label(center, textvariable=self.var_date, style="Subtle.TLabel").grid(row=1, column=0, pady=(2, 0))
+
+        self.btn_next = ttk.Button(nav, text="›", width=3, command=self.next_day)
         self.btn_next.grid(row=0, column=2, sticky="e")
 
+    def build_form(self):
         form = ttk.LabelFrame(self, text="Aggiungi attività", style="Surface.TLabelframe")
-        form.grid(row=2, column=0, sticky="ew", pady=(0, 16))
-        for col in range(4): # Rendo elastiche solo le colonne con input lunghi (1 e 3)
-            form.columnconfigure(col, weight=1 if col in (1, 3) else 0)
+        form.grid(row=1, column=0, sticky="ew", pady=(0, 10))
 
-        ttk.Label(form, text="Giorno:", style="SurfaceSubtle.TLabel").grid(row=0, column=0, sticky="w", padx=(6, 0), pady=6) # Campo: Giorno
-        self.combo_day = ttk.Combobox(form, values=self.DAYS, state="readonly", width=12, style="Planner.TCombobox")
-        self.combo_day.current(self.current_day_index)
-        self.combo_day.grid(row=0, column=1, sticky="w", pady=6)
+        form.columnconfigure(1, weight=1)
+        form.columnconfigure(3, weight=1)
 
-        ttk.Label(form, text="Orario (HH:MM):", style="SurfaceSubtle.TLabel").grid(row=0, column=2, sticky="w", padx=(12, 0), pady=6) # Campo: Orario
-        self.entry_time = ttk.Entry(form, width=10)
-        self.entry_time.grid(row=0, column=3, sticky="w", pady=6)
+        ttk.Label(form, text="Giorno", style="Surface.TLabel").grid(row=0, column=0, sticky="w", padx=(2, 10), pady=6)
+        self.combo_day = ttk.Combobox(form, values=self.DAYS, state="readonly", style="Planner.TCombobox")
+        self.combo_day.grid(row=0, column=1, sticky="ew", pady=6)
 
-        ttk.Label(form, text="Attività:", style="SurfaceSubtle.TLabel").grid(row=1, column=0, sticky="w", padx=(6, 0), pady=6) # Campo: Attività
+        ttk.Label(form, text="Orario", style="Surface.TLabel").grid(row=0, column=2, sticky="w", padx=(20, 10), pady=6)
+        self.entry_time = ttk.Entry(form)
+        self.entry_time.grid(row=0, column=3, sticky="ew", pady=6)
+
+        ttk.Label(form, text="Attività", style="Surface.TLabel").grid(row=1, column=0, sticky="w", padx=(2, 10), pady=6)
         self.entry_subject = ttk.Entry(form)
         self.entry_subject.grid(row=1, column=1, sticky="ew", pady=6)
 
-        ttk.Label(form, text="Note:", style="SurfaceSubtle.TLabel").grid(row=1, column=2, sticky="w", padx=(12, 0), pady=6) # Campo: Note (opzionali)
+        ttk.Label(form, text="Note", style="Surface.TLabel").grid(row=1, column=2, sticky="w", padx=(20, 10), pady=6)
         self.entry_notes = ttk.Entry(form)
         self.entry_notes.grid(row=1, column=3, sticky="ew", pady=6)
 
-        self.btn_add = ttk.Button(form, text="Aggiungi", command=self._add_activity, style="Primary.TButton") # Pulsante di aggiunta
-        self.btn_add.grid(row=2, column=0, columnspan=4, sticky="e", padx=6, pady=(8, 6))
+        ttk.Button(form, text="Aggiungi", command=self.add_activity, style="Primary.TButton").grid(
+            row=2,
+            column=3,
+            sticky="e",
+            pady=(6, 2),
+        )
 
-        table_frame = ttk.LabelFrame(self, text="Attività del giorno", style="Surface.TLabelframe") # TABELLA (Treeview)
-        table_frame.grid(row=3, column=0, sticky="nsew")
-        table_frame.columnconfigure(0, weight=1)
-        table_frame.rowconfigure(0, weight=1)
+    def build_table(self):
+        frame = ttk.LabelFrame(self, text="Attività del giorno", style="Surface.TLabelframe")
+        frame.grid(row=2, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
 
-        columns = ("time", "subject", "notes") # Definisci le colonne logiche della Treeview
-        self.tree = ttk.Treeview(table_frame, columns=columns, show="headings", height=8)
-        headings = { # Intestazioni con possibilità di ordinamento cliccando sul titolo
-            "time": "Orario",
-            "subject": "Attività",
-            "notes": "Note",
-        }
-        for col in columns: 
-            self.tree.heading(col, text=headings[col], command=lambda c=col: self._sort_by(c))
-            anchor = "center" if col == "time" else "w"
-            width = 110 if col == "time" else 220
-            self.tree.column(col, anchor=anchor, width=width)
+        columns = ("time", "subject", "notes")
+        self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=7)
 
-        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview) # Scrollbar verticale collegata alla treeview
+        self.tree.heading("time", text="Orario", command=lambda: self.sort_by("time"))
+        self.tree.heading("subject", text="Attività", command=lambda: self.sort_by("subject"))
+        self.tree.heading("notes", text="Note", command=lambda: self.sort_by("notes"))
+
+        self.tree.column("time", anchor="center", width=100)
+        self.tree.column("subject", anchor="w", width=280)
+        self.tree.column("notes", anchor="w", width=280)
+
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
 
-        self.tree.grid(row=0, column=0, sticky="nsew") 
+        self.tree.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
 
-        actions = ttk.Frame(table_frame, style="Surface.TFrame") # Barra azioni sotto la tabella (qui solo rimozione selezione)
-        actions.grid(row=1, column=0, columnspan=2, sticky="e", pady=(8, 0))
-        ttk.Button(actions, text="Rimuovi selezionato", command=self._remove_selected_activity).pack(anchor="e")
+        bottom = ttk.Frame(frame, style="Surface.TFrame")
+        bottom.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        bottom.columnconfigure(0, weight=1)
 
-        self.lbl_hint = ttk.Label(self, text="", anchor="w", style="Subtle.TLabel") # Etichetta (es. numero attività del giorno)
-        self.lbl_hint.grid(row=4, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(bottom, textvariable=self.var_hint, style="SurfaceSubtle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Button(bottom, text="Rimuovi selezionato", command=self.remove_selected).grid(row=0, column=1, sticky="e")
 
-    #navigazione giorni
-    def _show_previous_day(self):
-        if self.current_day_index > 0:
-            self.current_day_index -= 1
-            self._refresh_day()
+    def previous_day(self):
+        if self.current_day > 0:
+            self.current_day -= 1
+            self.refresh_day()
 
-    def _show_next_day(self):
-        if self.current_day_index < len(self.DAYS) - 1:
-            self.current_day_index += 1
-            self._refresh_day()
+    def next_day(self):
+        if self.current_day < len(self.DAYS) - 1:
+            self.current_day += 1
+            self.refresh_day()
 
-    def _refresh_day(self): #aggiornamento vista
-        day = self.DAYS[self.current_day_index]
-        self.lbl_day.config(text=day)
-        self.combo_day.current(self.current_day_index)
+    def get_date_text(self) -> str:
+        current_date = self.week_start + timedelta(days=self.current_day)
+        return f"{current_date.day} {self.MONTHS[current_date.month]} {current_date.year}"
 
-        # Disabilita i bottoni ai bordi per non andare fuori range
-        if self.current_day_index == 0:
-            self.btn_prev.state(["disabled"])
-        else:
-            self.btn_prev.state(["!disabled"])
+    def refresh_day(self):
+        day = self.DAYS[self.current_day]
 
-        if self.current_day_index == len(self.DAYS) - 1:
-            self.btn_next.state(["disabled"])
-        else:
-            self.btn_next.state(["!disabled"])
+        self.var_day.set(day)
+        self.var_date.set(self.get_date_text())
+        self.combo_day.current(self.current_day)
 
-        # Svuoto e ricarico la tabella così sono certo di mostrare lo stato aggiornato del JSON
-        for row in self.tree.get_children():
-            self.tree.delete(row)
+        self.btn_prev.state(["disabled"] if self.current_day == 0 else ["!disabled"])
+        self.btn_next.state(["disabled"] if self.current_day == len(self.DAYS) - 1 else ["!disabled"])
 
-        entries = sorted(self.schedule[day], key=lambda item: item["time"]) # Ordina per orario
-        for index, entry in enumerate(entries):
+        self.tree.delete(*self.tree.get_children())
+
+        entries = sorted(self.schedule[day], key=lambda item: item["time"])
+
+        for index, item in enumerate(entries):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
-            self.tree.insert("", "end", values=(entry["time"], entry["subject"], entry["notes"]), tags=(tag,))
+            self.tree.insert("", "end", values=(item["time"], item["subject"], item["notes"]), tags=(tag,))
 
-        if entries:
-            self.lbl_hint.config(text=f"{len(entries)} attività pianificate per {day}.")
-        else:
-            self.lbl_hint.config(text=f"Nessuna attività programmata per {day}.")
-        self._apply_tree_styles()
+        self.var_hint.set(f"{len(entries)} attività pianificate per {day}." if entries else f"Nessuna attività programmata per {day}.")
+        self.apply_tree_style()
 
-    def _apply_tree_styles(self): #applica caratteristiche tema 
-        if not hasattr(self, "tree"):
-            return
-        palette = getattr(self.winfo_toplevel(), "_planner_palette", None)
-        if palette is not None:
-            even_bg = palette.surface
-            odd_bg = palette.alternate
-            fg = palette.text
-        else:
-            even_bg = "#FFFFFF"
-            odd_bg = "#F1F5F9"
-            fg = "#111111"
-        self.tree.tag_configure("evenrow", background=even_bg, foreground=fg)
-        self.tree.tag_configure("oddrow", background=odd_bg, foreground=fg)
+    def add_activity(self):
+        day = self.combo_day.get()
+        time = self.entry_time.get().strip()
+        subject = self.entry_subject.get().strip()
+        notes = self.entry_notes.get().strip()
 
-    def _on_theme_change(self, _event=None): # Richiamato quando cambia il tema: riapplica le palette
-        self._apply_tree_styles()
-
-    def _add_activity(self): #aggiunta e validazione
-        selected_day = self.combo_day.get()
-        time_value = self.entry_time.get().strip()
-        subject_value = self.entry_subject.get().strip()
-        notes_value = self.entry_notes.get().strip()
-
-        if not time_value or not subject_value: # Campi minimi richiesti: orario + attività
+        if not time or not subject:
             messagebox.showwarning("Campi obbligatori", "Inserisci almeno orario e attività.")
             return
 
         try:
-            datetime.strptime(time_value, "%H:%M") # Validazione formato orario: deve essere HH:MM 24h
+            datetime.strptime(time, "%H:%M")
         except ValueError:
-            messagebox.showwarning("Formato orario non valido", "Usa il formato 24h HH:MM.")
+            messagebox.showwarning("Formato orario non valido", "Usa il formato HH:MM.")
             return
 
-        entry = { ## Crea il record e aggiungilo alla lista del giorno selezionato
-            "time": time_value,
-            "subject": subject_value,
-            "notes": notes_value,
-        }
-        self.schedule[selected_day].append(entry)
-        self._persist_schedule() # salva subito su disco
-
-        if selected_day == self.DAYS[self.current_day_index]: 
-            self._refresh_day() # Se stai visualizzando proprio quel giorno, aggiorna la tabella
-
-        self.entry_time.delete(0, tk.END) # Svuota i campi e rimetti il focus sull'orario
-        self.entry_subject.delete(0, tk.END)
-        self.entry_notes.delete(0, tk.END)
-        self.entry_time.focus_set()
-
-    def _persist_schedule(self):
-        # Salvo immediatamente così se l'app si chiude non ce problema
+        self.schedule[day].append({"time": time, "subject": subject, "notes": notes})
         save_schedule(self.schedule)
 
-    def _sort_by(self, column: str):
-        day = self.DAYS[self.current_day_index]
-        entries = self.schedule[day]
-        if not entries:
-            return
+        if day == self.DAYS[self.current_day]:
+            self.refresh_day()
 
-        if not hasattr(self, "_sort_state"):
-            self._sort_state = {}
+        self.entry_time.delete(0, tk.END)
+        self.entry_subject.delete(0, tk.END)
+        self.entry_notes.delete(0, tk.END)
 
-        current_desc = self._sort_state.get(column, False)
-        reverse = not current_desc
+    def remove_selected(self):
+        selection = self.tree.selection()
 
-        # Selettore chiave di ordinamento per ogni colonna
-        if column == "time":
-            key_fn = lambda item: item["time"]
-        elif column == "subject":
-            key_fn = lambda item: item["subject"].lower()
-        else:
-            key_fn = lambda item: item["notes"].lower()
-
-        # Riordino la lista in place (senza creare un altra lista) così la successiva chiamata a _refresh_day mantiene l'ordinamento scelto
-        entries.sort(key=key_fn, reverse=reverse)
-        self._sort_state[column] = reverse
-        self._refresh_day()
-
-    def _remove_selected_activity(self): 
-        selection = self.tree.selection() # tuple di ID selezionati (qui usiamo la prima riga)
         if not selection:
             messagebox.showinfo("Seleziona un'attività", "Seleziona un'attività da rimuovere.")
             return
 
-        item_id = selection[0]
-        values = self.tree.item(item_id, "values") # tuple: (time, subject, notes)
-        if not values or len(values) < 3:
-            messagebox.showwarning("Elemento non valido", "Impossibile identificare l'attività selezionata.")
-            return
+        time, subject, notes = self.tree.item(selection[0], "values")
+        day = self.DAYS[self.current_day]
 
-        time_value, subject_value, notes_value = values 
-        if not messagebox.askyesno("Conferma rimozione", f"Vuoi eliminare l'attività '{subject_value}' delle {time_value}?"): # Conferma utente prima dell'eliminazione
-            return
-
-        day = self.DAYS[self.current_day_index] # Cerca la prima occorrenza che combaci esattamente e rimuovila
-        entries = self.schedule[day]
-        for idx, entry in enumerate(entries):
-            if (
-                entry.get("time") == time_value 
-                and entry.get("subject") == subject_value
-                and entry.get("notes") == notes_value
-            ):
-                # Rimuovo e salvo subito
-                entries.pop(idx) # rimuovi dalla lista in memoria
-                self._persist_schedule() # salva su disco subito
-                self._refresh_day() # aggiorna UI
+        for index, item in enumerate(self.schedule[day]):
+            if item["time"] == time and item["subject"] == subject and item["notes"] == notes:
+                self.schedule[day].pop(index)
+                save_schedule(self.schedule)
+                self.refresh_day()
                 return
 
-        # Se arrivo qui significa che l'utente ha probabilmente aggiornato la giornata mentre la dialog era aperta
-        messagebox.showwarning("Elemento non trovato", "L'attività selezionata non è più disponibile.")
+    def sort_by(self, column: str):
+        day = self.DAYS[self.current_day]
+        entries = self.schedule[day]
+
+        if not entries:
+            return
+
+        if not hasattr(self, "sort_state"):
+            self.sort_state = {}
+
+        reverse = not self.sort_state.get(column, False)
+        self.sort_state[column] = reverse
+
+        key = lambda item: item[column].lower() if column != "time" else item[column]
+        entries.sort(key=key, reverse=reverse)
+
+        self.refresh_day()
+
+    def apply_tree_style(self):
+        palette = getattr(self.winfo_toplevel(), "_planner_palette", None)
+
+        even = palette.surface if palette else "#FFFFFF"
+        odd = palette.alternate if palette else "#F4F6FF"
+        text = palette.text if palette else "#2E3532"
+
+        self.tree.tag_configure("evenrow", background=even, foreground=text)
+        self.tree.tag_configure("oddrow", background=odd, foreground=text)
+
+    def on_theme_change(self, _event=None):
+        self.apply_tree_style()
 
 
-def create_schedule_tab(parent: tk.Widget) -> ttk.Frame: # Factory function per integrare la tab nel Notebook principale
+def create_schedule_tab(parent: tk.Widget) -> ttk.Frame:
     return ScheduleTab(parent)

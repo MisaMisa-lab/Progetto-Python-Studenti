@@ -28,5 +28,10 @@
         "subject": "Analisi Numerica 1",
         "cfu": 8,
         "grade": 18.0
+    },
+    {
+        "subject": "Python",
+        "cfu": 8,
+        "grade": 30.0
     }
 ]
