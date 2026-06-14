@@ -2,7 +2,14 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Dict, List
 
-from exam_storage import load_exams, save_exams
+from logic_exams import (
+    add_exam,
+    calculate_averages,
+    format_grade,
+    load_exams_data,
+    remove_exam,
+    sort_exams,
+)
 
 
 class ExamsTab(ttk.Frame):
@@ -12,7 +19,7 @@ class ExamsTab(ttk.Frame):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(1, weight=1)
 
-        self.exams: List[Dict[str, float]] = load_exams()
+        self.exams: List[Dict[str, float]] = load_exams_data()
 
         self.var_avg = tk.StringVar(value="—")
         self.var_weighted = tk.StringVar(value="—")
@@ -54,13 +61,12 @@ class ExamsTab(ttk.Frame):
         self.entry_grade = ttk.Entry(form)
         self.entry_grade.grid(row=1, column=2, sticky="ew", padx=(12, 8), pady=(0, 4))
 
-        ttk.Button(form, text="Aggiungi", command=self.add_exam, style="Primary.TButton").grid(
-            row=1,
-            column=3,
-            sticky="ew",
-            padx=(20, 2),
-            pady=(0, 4),
-        )
+        ttk.Button(
+            form,
+            text="Aggiungi",
+            command=self.add_exam_from_form,
+            style="Primary.TButton",
+        ).grid(row=1, column=3, sticky="ew", padx=(20, 2), pady=(0, 4))
 
     def build_table(self):
         frame = ttk.LabelFrame(self, text="Esami registrati", style="Surface.TLabelframe")
@@ -89,8 +95,17 @@ class ExamsTab(ttk.Frame):
         bottom.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         bottom.columnconfigure(0, weight=1)
 
-        ttk.Label(bottom, text="Clicca sulle intestazioni per ordinare.", style="SurfaceSubtle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(bottom, text="Rimuovi selezionato", command=self.remove_selected).grid(row=0, column=1, sticky="e")
+        ttk.Label(
+            bottom,
+            text="Clicca sulle intestazioni per ordinare.",
+            style="SurfaceSubtle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+
+        ttk.Button(
+            bottom,
+            text="Rimuovi selezionato",
+            command=self.remove_selected,
+        ).grid(row=0, column=1, sticky="e")
 
     def build_summary(self):
         frame = ttk.LabelFrame(self, text="Riepilogo medie", style="Surface.TLabelframe")
@@ -109,35 +124,19 @@ class ExamsTab(ttk.Frame):
         ttk.Label(frame, text=label, style="SurfaceSubtle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(frame, textvariable=variable, style="Value.TLabel").grid(row=1, column=0, sticky="w")
 
-    def add_exam(self):
-        subject = self.entry_subject.get().strip()
-        cfu_text = self.entry_cfu.get().strip()
-        grade_text = self.entry_grade.get().strip()
-
-        if not subject or not cfu_text or not grade_text:
-            messagebox.showwarning("Campi obbligatori", "Compila materia, CFU e voto.")
-            return
+    def add_exam_from_form(self):
+        subject = self.entry_subject.get()
+        cfu = self.entry_cfu.get()
+        grade = self.entry_grade.get()
 
         try:
-            cfu = int(cfu_text)
-            if cfu <= 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showwarning("CFU non valido", "Inserisci un numero intero positivo.")
+            add_exam(self.exams, subject, cfu, grade)
+        except ValueError as error:
+            messagebox.showwarning("Attenzione", str(error))
             return
 
-        try:
-            grade = float(grade_text.replace(",", "."))
-        except ValueError:
-            messagebox.showwarning("Voto non valido", "Inserisci un numero valido.")
-            return
-
-        if not 0 <= grade <= 30:
-            messagebox.showwarning("Voto fuori scala", "Il voto deve essere tra 0 e 30.")
-            return
-
-        self.exams.append({"subject": subject, "cfu": cfu, "grade": grade})
-        self.save_and_refresh()
+        self.refresh_table()
+        self.update_stats()
 
         self.entry_subject.delete(0, tk.END)
         self.entry_cfu.delete(0, tk.END)
@@ -148,46 +147,30 @@ class ExamsTab(ttk.Frame):
 
         for index, exam in enumerate(self.exams):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
+
             self.tree.insert(
                 "",
                 "end",
-                values=(exam["subject"], exam["cfu"], self.format_grade(exam["grade"])),
+                values=(exam["subject"], exam["cfu"], format_grade(exam["grade"])),
                 tags=(tag,),
             )
 
         self.apply_tree_style()
 
     def update_stats(self):
-        if not self.exams:
-            self.var_avg.set("—")
-            self.var_weighted.set("—")
-            return
+        average, weighted = calculate_averages(self.exams)
 
-        grades = [exam["grade"] for exam in self.exams]
-        avg = sum(grades) / len(grades)
-
-        total_cfu = sum(exam["cfu"] for exam in self.exams)
-        weighted = sum(exam["grade"] * exam["cfu"] for exam in self.exams) / total_cfu
-
-        self.var_avg.set(f"{avg:.2f}".replace(".", ","))
-        self.var_weighted.set(f"{weighted:.2f}".replace(".", ","))
+        self.var_avg.set(average)
+        self.var_weighted.set(weighted)
 
     def sort_by(self, column: str):
-        if not self.exams:
-            return
-
         if not hasattr(self, "sort_state"):
             self.sort_state = {}
 
         reverse = not self.sort_state.get(column, False)
         self.sort_state[column] = reverse
 
-        if column == "subject":
-            key = lambda exam: exam["subject"].lower()
-        else:
-            key = lambda exam: exam[column]
-
-        self.exams.sort(key=key, reverse=reverse)
+        sort_exams(self.exams, column, reverse)
         self.refresh_table()
 
     def remove_selected(self):
@@ -202,21 +185,13 @@ class ExamsTab(ttk.Frame):
         if not messagebox.askyesno("Conferma rimozione", f"Vuoi eliminare '{subject}'?"):
             return
 
-        for index, exam in enumerate(self.exams):
-            if exam["subject"] == subject and str(exam["cfu"]) == str(cfu) and self.format_grade(exam["grade"]) == grade:
-                self.exams.pop(index)
-                self.save_and_refresh()
-                return
+        removed = remove_exam(self.exams, subject, cfu, grade)
 
-    def save_and_refresh(self):
-        save_exams(self.exams)
-        self.refresh_table()
-        self.update_stats()
-
-    def format_grade(self, grade: float) -> str:
-        if float(grade).is_integer():
-            return str(int(grade))
-        return f"{grade:.1f}"
+        if removed:
+            self.refresh_table()
+            self.update_stats()
+        else:
+            messagebox.showwarning("Errore", "Esame non trovato.")
 
     def apply_tree_style(self):
         palette = getattr(self.winfo_toplevel(), "_planner_palette", None)

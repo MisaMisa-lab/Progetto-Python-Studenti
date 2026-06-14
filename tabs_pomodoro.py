@@ -1,23 +1,23 @@
 import math
 import tkinter as tk
-from datetime import date
 from tkinter import messagebox, ttk
 
-from report import fmt_mm, somma
-from storage import FILE_NAME, load_data, save_data
-
-
-def fmt_mmss(seconds: int) -> str:
-    seconds = max(0, int(seconds))
-    minutes, seconds = divmod(seconds, 60)
-    return f"{minutes:02d}:{seconds:02d}"
+from logic_pomodoro import (
+    format_minutes,
+    format_seconds,
+    get_period_stats,
+    get_subject_rows,
+    load_pomodoro_data,
+    save_study_session,
+    sort_subject_rows,
+)
 
 
 class Pomodoro(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent, padding=0, style="Background.TFrame")
 
-        self.data = load_data(FILE_NAME)
+        self.data = load_pomodoro_data()
 
         self.state = "idle"
         self.after_id = None
@@ -41,10 +41,15 @@ class Pomodoro(ttk.Frame):
         self.tree_subjects = None
         self.progress_color = "#5465FF"
         self.track_color = "#E4E7F5"
+        self.progress_items = []
 
         self.build_scroll_area()
         self.build_ui()
         self.update_stats()
+
+    # =========================
+    # GRAFICA
+    # =========================
 
     def build_scroll_area(self):
         self.columnconfigure(0, weight=1)
@@ -61,11 +66,25 @@ class Pomodoro(ttk.Frame):
         self.page = ttk.Frame(self.canvas_scroll, padding=10, style="Background.TFrame")
         self.canvas_window = self.canvas_scroll.create_window((0, 0), window=self.page, anchor="nw")
 
-        self.page.bind("<Configure>", lambda e: self.canvas_scroll.configure(scrollregion=self.canvas_scroll.bbox("all")))
-        self.canvas_scroll.bind("<Configure>", lambda e: self.canvas_scroll.itemconfigure(self.canvas_window, width=e.width))
+        self.page.bind(
+            "<Configure>",
+            lambda event: self.canvas_scroll.configure(scrollregion=self.canvas_scroll.bbox("all")),
+        )
 
-        self.canvas_scroll.bind("<Enter>", lambda e: self.canvas_scroll.bind_all("<MouseWheel>", self.on_mousewheel))
-        self.canvas_scroll.bind("<Leave>", lambda e: self.canvas_scroll.unbind_all("<MouseWheel>"))
+        self.canvas_scroll.bind(
+            "<Configure>",
+            lambda event: self.canvas_scroll.itemconfigure(self.canvas_window, width=event.width),
+        )
+
+        self.canvas_scroll.bind(
+            "<Enter>",
+            lambda event: self.canvas_scroll.bind_all("<MouseWheel>", self.on_mousewheel),
+        )
+
+        self.canvas_scroll.bind(
+            "<Leave>",
+            lambda event: self.canvas_scroll.unbind_all("<MouseWheel>"),
+        )
 
     def on_mousewheel(self, event):
         self.canvas_scroll.yview_scroll(int(-event.delta / 120), "units")
@@ -98,14 +117,51 @@ class Pomodoro(ttk.Frame):
         frame.columnconfigure(1, weight=1)
         frame.columnconfigure(3, weight=1)
 
-        ttk.Label(frame, text="Materia", style="Surface.TLabel").grid(row=0, column=0, sticky="w", padx=(2, 8), pady=6)
-        ttk.Entry(frame, textvariable=self.var_subject).grid(row=0, column=1, columnspan=3, sticky="ew", pady=6)
+        ttk.Label(frame, text="Materia", style="Surface.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(2, 8),
+            pady=6,
+        )
 
-        ttk.Label(frame, text="Studio", style="Surface.TLabel").grid(row=1, column=0, sticky="w", padx=(2, 8), pady=6)
-        ttk.Spinbox(frame, from_=1, to=240, textvariable=self.var_study, width=6).grid(row=1, column=1, sticky="w", pady=6)
+        ttk.Entry(frame, textvariable=self.var_subject).grid(
+            row=0,
+            column=1,
+            columnspan=3,
+            sticky="ew",
+            pady=6,
+        )
 
-        ttk.Label(frame, text="Pausa", style="Surface.TLabel").grid(row=1, column=2, sticky="w", padx=(14, 8), pady=6)
-        ttk.Spinbox(frame, from_=1, to=120, textvariable=self.var_break, width=6).grid(row=1, column=3, sticky="w", pady=6)
+        ttk.Label(frame, text="Studio", style="Surface.TLabel").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(2, 8),
+            pady=6,
+        )
+
+        ttk.Spinbox(frame, from_=1, to=240, textvariable=self.var_study, width=6).grid(
+            row=1,
+            column=1,
+            sticky="w",
+            pady=6,
+        )
+
+        ttk.Label(frame, text="Pausa", style="Surface.TLabel").grid(
+            row=1,
+            column=2,
+            sticky="w",
+            padx=(14, 8),
+            pady=6,
+        )
+
+        ttk.Spinbox(frame, from_=1, to=120, textvariable=self.var_break, width=6).grid(
+            row=1,
+            column=3,
+            sticky="w",
+            pady=6,
+        )
 
         ttk.Checkbutton(
             frame,
@@ -141,8 +197,16 @@ class Pomodoro(ttk.Frame):
         frame.grid(row=0, column=1, sticky="nsew")
         frame.columnconfigure(0, weight=1)
 
-        ttk.Label(frame, textvariable=self.var_info, style="Value.TLabel", anchor="center").grid(row=0, column=0, pady=(2, 0))
-        ttk.Label(frame, text="—", style="SurfaceSubtle.TLabel", anchor="center").grid(row=1, column=0)
+        ttk.Label(frame, textvariable=self.var_info, style="Value.TLabel", anchor="center").grid(
+            row=0,
+            column=0,
+            pady=(2, 0),
+        )
+
+        ttk.Label(frame, text="—", style="SurfaceSubtle.TLabel", anchor="center").grid(
+            row=1,
+            column=0,
+        )
 
         area = ttk.Frame(frame, style="Surface.TFrame")
         area.grid(row=2, column=0)
@@ -150,22 +214,28 @@ class Pomodoro(ttk.Frame):
         self.canvas_timer = tk.Canvas(area, width=210, height=210, highlightthickness=0)
         self.canvas_timer.grid(row=0, column=0)
 
-        self.track = self.canvas_timer.create_oval(18, 18, 192, 192, outline=self.track_color, width=12)
-        self.progress_items = []
-
-        ttk.Label(area, textvariable=self.var_timer, font=("Inter", 30, "bold"), style="Surface.TLabel").place(
-            in_=self.canvas_timer,
-            relx=0.5,
-            rely=0.45,
-            anchor="center",
+        self.track = self.canvas_timer.create_oval(
+            18,
+            18,
+            192,
+            192,
+            outline=self.track_color,
+            width=12,
         )
 
-        ttk.Label(area, textvariable=self.var_phase, font=("Inter", 11, "bold"), style="Value.TLabel").place(
-            in_=self.canvas_timer,
-            relx=0.5,
-            rely=0.61,
-            anchor="center",
-        )
+        ttk.Label(
+            area,
+            textvariable=self.var_timer,
+            font=("Inter", 30, "bold"),
+            style="Surface.TLabel",
+        ).place(in_=self.canvas_timer, relx=0.5, rely=0.45, anchor="center")
+
+        ttk.Label(
+            area,
+            textvariable=self.var_phase,
+            font=("Inter", 11, "bold"),
+            style="Value.TLabel",
+        ).place(in_=self.canvas_timer, relx=0.5, rely=0.61, anchor="center")
 
         buttons = ttk.Frame(frame, style="Surface.TFrame")
         buttons.grid(row=3, column=0, sticky="ew", padx=10, pady=(4, 8))
@@ -197,18 +267,31 @@ class Pomodoro(ttk.Frame):
         columns = ("materia", "oggi", "settimana", "mese", "totale")
         self.tree_subjects = ttk.Treeview(frame, columns=columns, show="headings", height=4)
 
-        for col, title in zip(columns, ("Materia", "Oggi", "Settimana", "Mese", "Totale")):
-            self.tree_subjects.heading(col, text=title, command=lambda c=col: self.sort_table(c))
+        headings = {
+            "materia": "Materia",
+            "oggi": "Oggi",
+            "settimana": "Settimana",
+            "mese": "Mese",
+            "totale": "Totale",
+        }
+
+        for column, title in headings.items():
+            self.tree_subjects.heading(column, text=title, command=lambda c=column: self.sort_table(c))
 
         self.tree_subjects.column("materia", anchor="w", width=220)
-        for col in columns[1:]:
-            self.tree_subjects.column(col, anchor="center", width=100)
+
+        for column in columns[1:]:
+            self.tree_subjects.column(column, anchor="center", width=100)
 
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree_subjects.yview)
         self.tree_subjects.configure(yscrollcommand=scrollbar.set)
 
         self.tree_subjects.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
+
+    # =========================
+    # TIMER
+    # =========================
 
     def start(self):
         subject = self.var_subject.get().strip().lower()
@@ -253,6 +336,7 @@ class Pomodoro(ttk.Frame):
         elif self.state in ("pause_study", "pause_break"):
             new_state = "studio" if self.state == "pause_study" else "riposo"
             self.switch_to(new_state, self.sec_left, change_buttons=False, reset_target=False)
+
             self.btn_pause.config(text="Pausa")
             self.var_info.set("Timer ripreso")
             self.tick()
@@ -264,7 +348,7 @@ class Pomodoro(ttk.Frame):
             studied = (self.sec_target - self.sec_left) // 60
 
             if studied >= 1:
-                self.save_session(self.current_subject, studied)
+                save_study_session(self.data, self.current_subject, studied)
                 self.var_info.set(f"Salvato: {studied} min")
                 self.update_stats()
             else:
@@ -283,7 +367,7 @@ class Pomodoro(ttk.Frame):
         if reset_target:
             self.sec_target = int(seconds)
 
-        self.var_timer.set(fmt_mmss(self.sec_left))
+        self.var_timer.set(format_seconds(self.sec_left))
         self.var_phase.set("Studio" if state == "studio" else "Riposo")
 
         if change_buttons:
@@ -300,7 +384,7 @@ class Pomodoro(ttk.Frame):
         self.sec_left = 0
 
         try:
-            self.var_timer.set(fmt_mmss(int(self.var_study.get()) * 60))
+            self.var_timer.set(format_seconds(int(self.var_study.get()) * 60))
         except Exception:
             self.var_timer.set("25:00")
 
@@ -310,7 +394,7 @@ class Pomodoro(ttk.Frame):
         self.update_progress()
 
     def tick(self):
-        self.var_timer.set(fmt_mmss(self.sec_left))
+        self.var_timer.set(format_seconds(self.sec_left))
         self.update_progress()
 
         if self.sec_left <= 0:
@@ -323,10 +407,11 @@ class Pomodoro(ttk.Frame):
     def complete_phase(self):
         if self.state == "studio":
             minutes = self.sec_target // 60
-            self.save_session(self.current_subject, minutes)
-            self.update_stats()
-            self.var_info.set(f"Sessione completata: {minutes} min")
 
+            save_study_session(self.data, self.current_subject, minutes)
+            self.update_stats()
+
+            self.var_info.set(f"Sessione completata: {minutes} min")
             self.switch_to("riposo", int(self.var_break.get()) * 60)
             self.tick()
 
@@ -367,20 +452,18 @@ class Pomodoro(ttk.Frame):
 
         self.after_id = None
 
-    def save_session(self, subject: str, minutes: int):
-        if minutes <= 0:
-            return
-
-        today = date.today().isoformat()
-        self.data.setdefault(subject, [])
-        self.data[subject].append({"data": today, "minuti": int(minutes)})
-        save_data(self.data, FILE_NAME)
+    # =========================
+    # STATISTICHE
+    # =========================
 
     def update_stats(self):
         try:
-            self.var_today.set(fmt_mm(somma(self.data, "oggi")))
-            self.var_week.set(fmt_mm(somma(self.data, "settimana")))
-            self.var_month.set(fmt_mm(somma(self.data, "mese")))
+            today, week, month = get_period_stats(self.data)
+
+            self.var_today.set(today)
+            self.var_week.set(week)
+            self.var_month.set(month)
+
             self.update_subject_table()
         except Exception:
             self.var_today.set("—")
@@ -388,60 +471,49 @@ class Pomodoro(ttk.Frame):
             self.var_month.set("—")
 
     def update_subject_table(self):
-        self.tree_subjects.delete(*self.tree_subjects.get_children())
-
-        rows = []
-
-        for subject, sessions in self.data.items():
-            single = {subject: sessions}
-            today = somma(single, "oggi")
-            week = somma(single, "settimana")
-            month = somma(single, "mese")
-            total = sum(int(item.get("minuti", 0)) for item in sessions)
-            rows.append((subject, today, week, month, total))
-
+        rows = get_subject_rows(self.data)
         self.insert_rows(rows)
 
-    def insert_rows(self, rows):
+    def insert_rows(self, rows: list[dict]):
+        self.tree_subjects.delete(*self.tree_subjects.get_children())
+
         for index, row in enumerate(rows):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
 
             self.tree_subjects.insert(
                 "",
                 "end",
-                values=(row[0].capitalize(), fmt_mm(row[1]), fmt_mm(row[2]), fmt_mm(row[3]), fmt_mm(row[4])),
+                values=(
+                    row["materia"].capitalize(),
+                    format_minutes(row["oggi"]),
+                    format_minutes(row["settimana"]),
+                    format_minutes(row["mese"]),
+                    format_minutes(row["totale"]),
+                ),
                 tags=(tag,),
             )
 
         self.apply_tree_style()
 
     def sort_table(self, column: str):
-        index_map = {"materia": 0, "oggi": 1, "settimana": 2, "mese": 3, "totale": 4}
-        rows = []
-
-        for subject, sessions in self.data.items():
-            single = {subject: sessions}
-            rows.append((
-                subject,
-                somma(single, "oggi"),
-                somma(single, "settimana"),
-                somma(single, "mese"),
-                sum(int(item.get("minuti", 0)) for item in sessions),
-            ))
+        rows = get_subject_rows(self.data)
 
         reverse = getattr(self, "sort_reverse", False)
         self.sort_reverse = not reverse
-        rows.sort(key=lambda row: row[index_map[column]], reverse=reverse)
 
-        self.tree_subjects.delete(*self.tree_subjects.get_children())
+        rows = sort_subject_rows(rows, column, reverse=reverse)
         self.insert_rows(rows)
+
+    # =========================
+    # GRAFICA TIMER
+    # =========================
 
     def update_progress(self):
         if self.sec_target <= 0:
-            percent = 0.18
+            percent = 0
         else:
             percent = (self.sec_target - self.sec_left) / self.sec_target
-            percent = max(0.01, min(1, percent))
+            percent = max(0, min(1, percent))
 
         self.draw_round_arc(percent)
 
@@ -451,8 +523,12 @@ class Pomodoro(ttk.Frame):
 
         self.progress_items.clear()
 
+        if percent <= 0:
+            return
+
         cx, cy = 105, 105
         radius = 87
+
         start_angle = -90
         end_angle = start_angle + (360 * percent)
         steps = max(4, int(80 * percent))
@@ -461,9 +537,11 @@ class Pomodoro(ttk.Frame):
 
         for i in range(steps + 1):
             angle = start_angle + (end_angle - start_angle) * i / steps
-            rad = math.radians(angle)
-            x = cx + radius * math.cos(rad)
-            y = cy + radius * math.sin(rad)
+            radians = math.radians(angle)
+
+            x = cx + radius * math.cos(radians)
+            y = cy + radius * math.sin(radians)
+
             points.extend((x, y))
 
         arc = self.canvas_timer.create_line(

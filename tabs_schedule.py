@@ -1,40 +1,31 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from datetime import datetime, timedelta
 
-from schedule_storage import load_schedule, save_schedule
+from logic_schedule import (
+    DAYS,
+    REPEAT_OPTIONS,
+    add_activity,
+    get_current_day_index,
+    get_date_for_day,
+    get_date_text,
+    get_day_entries,
+    get_week_start,
+    load_schedule_data,
+    remove_activity,
+    sort_activities,
+)
 
 
 class ScheduleTab(ttk.Frame):
-    DAYS = ("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "DOMENICA")
-
-    MONTHS = {
-        1: "Gennaio",
-        2: "Febbraio",
-        3: "Marzo",
-        4: "Aprile",
-        5: "Maggio",
-        6: "Giugno",
-        7: "Luglio",
-        8: "Agosto",
-        9: "Settembre",
-        10: "Ottobre",
-        11: "Novembre",
-        12: "Dicembre",
-    }
-
     def __init__(self, parent: tk.Widget):
         super().__init__(parent, padding=14, style="Background.TFrame")
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(2, weight=1)
 
-        data = load_schedule()
-        self.schedule = {day: list(data.get(day, [])) for day in self.DAYS}
-
-        today = datetime.now()
-        self.week_start = today - timedelta(days=today.weekday())
-        self.current_day = today.weekday() if today.weekday() < len(self.DAYS) else 0
+        self.schedule = load_schedule_data()
+        self.week_start = get_week_start()
+        self.current_day = get_current_day_index()
 
         self.var_day = tk.StringVar()
         self.var_date = tk.StringVar()
@@ -65,8 +56,18 @@ class ScheduleTab(ttk.Frame):
         center = ttk.Frame(nav, style="Background.TFrame")
         center.grid(row=0, column=1)
 
-        ttk.Label(center, textvariable=self.var_day, style="Subtle.TLabel", font=("Poppins", 15, "bold")).grid(row=0, column=0)
-        ttk.Label(center, textvariable=self.var_date, style="Subtle.TLabel").grid(row=1, column=0, pady=(2, 0))
+        ttk.Label(
+            center,
+            textvariable=self.var_day,
+            style="Subtle.TLabel",
+            font=("Poppins", 15, "bold"),
+        ).grid(row=0, column=0)
+
+        ttk.Label(
+            center,
+            textvariable=self.var_date,
+            style="Subtle.TLabel",
+        ).grid(row=1, column=0, pady=(2, 0))
 
         self.btn_next = ttk.Button(nav, text="›", width=3, command=self.next_day)
         self.btn_next.grid(row=0, column=2, sticky="e")
@@ -77,29 +78,70 @@ class ScheduleTab(ttk.Frame):
 
         form.columnconfigure(1, weight=1)
         form.columnconfigure(3, weight=1)
+        form.columnconfigure(5, weight=1)
 
-        ttk.Label(form, text="Giorno", style="Surface.TLabel").grid(row=0, column=0, sticky="w", padx=(2, 10), pady=6)
-        self.combo_day = ttk.Combobox(form, values=self.DAYS, state="readonly", style="Planner.TCombobox")
+        ttk.Label(form, text="Giorno", style="Surface.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(2, 8),
+            pady=6,
+        )
+
+        self.combo_day = ttk.Combobox(form, values=DAYS, state="readonly", style="Planner.TCombobox")
         self.combo_day.grid(row=0, column=1, sticky="ew", pady=6)
 
-        ttk.Label(form, text="Orario", style="Surface.TLabel").grid(row=0, column=2, sticky="w", padx=(20, 10), pady=6)
+        ttk.Label(form, text="Orario", style="Surface.TLabel").grid(
+            row=0,
+            column=2,
+            sticky="w",
+            padx=(14, 8),
+            pady=6,
+        )
+
         self.entry_time = ttk.Entry(form)
         self.entry_time.grid(row=0, column=3, sticky="ew", pady=6)
 
-        ttk.Label(form, text="Attività", style="Surface.TLabel").grid(row=1, column=0, sticky="w", padx=(2, 10), pady=6)
-        self.entry_subject = ttk.Entry(form)
-        self.entry_subject.grid(row=1, column=1, sticky="ew", pady=6)
-
-        ttk.Label(form, text="Note", style="Surface.TLabel").grid(row=1, column=2, sticky="w", padx=(20, 10), pady=6)
-        self.entry_notes = ttk.Entry(form)
-        self.entry_notes.grid(row=1, column=3, sticky="ew", pady=6)
-
-        ttk.Button(form, text="Aggiungi", command=self.add_activity, style="Primary.TButton").grid(
-            row=2,
-            column=3,
-            sticky="e",
-            pady=(6, 2),
+        ttk.Label(form, text="Ripeti", style="Surface.TLabel").grid(
+            row=0,
+            column=4,
+            sticky="w",
+            padx=(14, 8),
+            pady=6,
         )
+
+        self.combo_repeat = ttk.Combobox(form, values=REPEAT_OPTIONS, state="readonly", style="Planner.TCombobox")
+        self.combo_repeat.current(0)
+        self.combo_repeat.grid(row=0, column=5, sticky="ew", pady=6)
+
+        ttk.Label(form, text="Attività", style="Surface.TLabel").grid(
+            row=1,
+            column=0,
+            sticky="w",
+            padx=(2, 8),
+            pady=6,
+        )
+
+        self.entry_subject = ttk.Entry(form)
+        self.entry_subject.grid(row=1, column=1, columnspan=2, sticky="ew", pady=6)
+
+        ttk.Label(form, text="Note", style="Surface.TLabel").grid(
+            row=1,
+            column=3,
+            sticky="w",
+            padx=(14, 8),
+            pady=6,
+        )
+
+        self.entry_notes = ttk.Entry(form)
+        self.entry_notes.grid(row=1, column=4, columnspan=2, sticky="ew", pady=6)
+
+        ttk.Button(
+            form,
+            text="Aggiungi",
+            command=self.add_activity_from_form,
+            style="Primary.TButton",
+        ).grid(row=2, column=5, sticky="e", pady=(6, 2))
 
     def build_table(self):
         frame = ttk.LabelFrame(self, text="Attività del giorno", style="Surface.TLabelframe")
@@ -107,16 +149,18 @@ class ScheduleTab(ttk.Frame):
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(0, weight=1)
 
-        columns = ("time", "subject", "notes")
+        columns = ("time", "subject", "repeat", "notes")
         self.tree = ttk.Treeview(frame, columns=columns, show="headings", height=7)
 
         self.tree.heading("time", text="Orario", command=lambda: self.sort_by("time"))
         self.tree.heading("subject", text="Attività", command=lambda: self.sort_by("subject"))
+        self.tree.heading("repeat", text="Ripeti", command=lambda: self.sort_by("repeat"))
         self.tree.heading("notes", text="Note", command=lambda: self.sort_by("notes"))
 
-        self.tree.column("time", anchor="center", width=100)
-        self.tree.column("subject", anchor="w", width=280)
-        self.tree.column("notes", anchor="w", width=280)
+        self.tree.column("time", anchor="center", width=90)
+        self.tree.column("subject", anchor="w", width=240)
+        self.tree.column("repeat", anchor="center", width=140)
+        self.tree.column("notes", anchor="w", width=240)
 
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -128,8 +172,17 @@ class ScheduleTab(ttk.Frame):
         bottom.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         bottom.columnconfigure(0, weight=1)
 
-        ttk.Label(bottom, textvariable=self.var_hint, style="SurfaceSubtle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Button(bottom, text="Rimuovi selezionato", command=self.remove_selected).grid(row=0, column=1, sticky="e")
+        ttk.Label(
+            bottom,
+            textvariable=self.var_hint,
+            style="SurfaceSubtle.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+
+        ttk.Button(
+            bottom,
+            text="Rimuovi selezionato",
+            command=self.remove_selected,
+        ).grid(row=0, column=1, sticky="e")
 
     def previous_day(self):
         if self.current_day > 0:
@@ -137,60 +190,70 @@ class ScheduleTab(ttk.Frame):
             self.refresh_day()
 
     def next_day(self):
-        if self.current_day < len(self.DAYS) - 1:
+        if self.current_day < len(DAYS) - 1:
             self.current_day += 1
             self.refresh_day()
 
-    def get_date_text(self) -> str:
-        current_date = self.week_start + timedelta(days=self.current_day)
-        return f"{current_date.day} {self.MONTHS[current_date.month]} {current_date.year}"
-
     def refresh_day(self):
-        day = self.DAYS[self.current_day]
+        day = DAYS[self.current_day]
+        current_date = get_date_for_day(self.week_start, self.current_day)
 
         self.var_day.set(day)
-        self.var_date.set(self.get_date_text())
+        self.var_date.set(get_date_text(self.week_start, self.current_day))
         self.combo_day.current(self.current_day)
 
         self.btn_prev.state(["disabled"] if self.current_day == 0 else ["!disabled"])
-        self.btn_next.state(["disabled"] if self.current_day == len(self.DAYS) - 1 else ["!disabled"])
+        self.btn_next.state(["disabled"] if self.current_day == len(DAYS) - 1 else ["!disabled"])
 
         self.tree.delete(*self.tree.get_children())
 
-        entries = sorted(self.schedule[day], key=lambda item: item["time"])
+        entries = get_day_entries(self.schedule, day, current_date)
 
         for index, item in enumerate(entries):
             tag = "evenrow" if index % 2 == 0 else "oddrow"
-            self.tree.insert("", "end", values=(item["time"], item["subject"], item["notes"]), tags=(tag,))
 
-        self.var_hint.set(f"{len(entries)} attività pianificate per {day}." if entries else f"Nessuna attività programmata per {day}.")
+            self.tree.insert(
+                "",
+                "end",
+                values=(
+                    item.get("time", ""),
+                    item.get("subject", ""),
+                    item.get("repeat", "Ogni settimana"),
+                    item.get("notes", ""),
+                ),
+                tags=(tag,),
+            )
+
+        if entries:
+            self.var_hint.set(f"{len(entries)} attività pianificate per {day}.")
+        else:
+            self.var_hint.set(f"Nessuna attività programmata per {day}.")
+
         self.apply_tree_style()
 
-    def add_activity(self):
+    def add_activity_from_form(self):
         day = self.combo_day.get()
-        time = self.entry_time.get().strip()
-        subject = self.entry_subject.get().strip()
-        notes = self.entry_notes.get().strip()
+        time = self.entry_time.get()
+        subject = self.entry_subject.get()
+        notes = self.entry_notes.get()
+        repeat = self.combo_repeat.get()
 
-        if not time or not subject:
-            messagebox.showwarning("Campi obbligatori", "Inserisci almeno orario e attività.")
-            return
+        day_index = DAYS.index(day)
+        activity_date = get_date_for_day(self.week_start, day_index)
 
         try:
-            datetime.strptime(time, "%H:%M")
-        except ValueError:
-            messagebox.showwarning("Formato orario non valido", "Usa il formato HH:MM.")
+            add_activity(self.schedule, day, time, subject, notes, repeat, activity_date)
+        except ValueError as error:
+            messagebox.showwarning("Attenzione", str(error))
             return
 
-        self.schedule[day].append({"time": time, "subject": subject, "notes": notes})
-        save_schedule(self.schedule)
-
-        if day == self.DAYS[self.current_day]:
+        if day == DAYS[self.current_day]:
             self.refresh_day()
 
         self.entry_time.delete(0, tk.END)
         self.entry_subject.delete(0, tk.END)
         self.entry_notes.delete(0, tk.END)
+        self.combo_repeat.current(0)
 
     def remove_selected(self):
         selection = self.tree.selection()
@@ -199,22 +262,32 @@ class ScheduleTab(ttk.Frame):
             messagebox.showinfo("Seleziona un'attività", "Seleziona un'attività da rimuovere.")
             return
 
-        time, subject, notes = self.tree.item(selection[0], "values")
-        day = self.DAYS[self.current_day]
+        values = self.tree.item(selection[0], "values")
 
-        for index, item in enumerate(self.schedule[day]):
-            if item["time"] == time and item["subject"] == subject and item["notes"] == notes:
-                self.schedule[day].pop(index)
-                save_schedule(self.schedule)
-                self.refresh_day()
-                return
+        if not values or len(values) < 4:
+            messagebox.showwarning("Errore", "Attività non valida.")
+            return
+
+        time, subject, repeat, notes = values
+        day = DAYS[self.current_day]
+
+        confirmed = messagebox.askyesno(
+            "Conferma eliminazione",
+            f"Vuoi eliminare l'attività '{subject}' delle {time}?",
+        )
+
+        if not confirmed:
+            return
+
+        removed = remove_activity(self.schedule, day, time, subject, repeat, notes)
+
+        if removed:
+            self.refresh_day()
+        else:
+            messagebox.showwarning("Errore", "Attività non trovata.")
 
     def sort_by(self, column: str):
-        day = self.DAYS[self.current_day]
-        entries = self.schedule[day]
-
-        if not entries:
-            return
+        day = DAYS[self.current_day]
 
         if not hasattr(self, "sort_state"):
             self.sort_state = {}
@@ -222,9 +295,7 @@ class ScheduleTab(ttk.Frame):
         reverse = not self.sort_state.get(column, False)
         self.sort_state[column] = reverse
 
-        key = lambda item: item[column].lower() if column != "time" else item[column]
-        entries.sort(key=key, reverse=reverse)
-
+        sort_activities(self.schedule, day, column, reverse)
         self.refresh_day()
 
     def apply_tree_style(self):
