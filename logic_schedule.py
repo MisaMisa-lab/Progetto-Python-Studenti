@@ -4,9 +4,10 @@ from typing import Dict, List
 from schedule_storage import load_schedule, save_schedule
 
 
-DAYS = ("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato")
+DAYS = ("Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato","Domenica")
 REPEAT_OPTIONS = ("No", "Ogni settimana", "Ogni mese")
 
+# Dizionario per trasformare il numero del mese nel nome italiano.
 MONTHS = {
     1: "Gennaio",
     2: "Febbraio",
@@ -55,6 +56,7 @@ def get_date_text(week_start: datetime, day_index: int) -> str:
 
 def get_day_entries(schedule: dict, day: str, current_date: datetime) -> list[dict]:
     entries = []
+    # Restituisce solo le attività visibili in quel giorno e in quella data.
 
     for item in schedule.get(day, []):
         if is_visible_on_date(item, current_date):
@@ -96,9 +98,11 @@ def add_activity(
     repeat: str,
     activity_date: datetime,
 ) -> None:
+    # Aggiunge una nuova attività all'orario.
     time = time.strip()
     subject = subject.strip()
     notes = notes.strip()
+    # Pulisco i testi inseriti dall'utente.
 
     if repeat not in REPEAT_OPTIONS:
         repeat = "No"
@@ -127,6 +131,8 @@ def add_activity(
 
 def remove_activity(schedule: dict, day: str, time: str, subject: str, repeat: str, notes: str) -> bool:
     for index, item in enumerate(schedule[day]):
+        # Ciclo tutte le attività di quel giorno con enumerate,
+        # così ho sia l'indice sia il contenuto.
         same_time = item.get("time", "") == time
         same_subject = item.get("subject", "") == subject
         same_repeat = item.get("repeat", "Ogni settimana") == repeat
